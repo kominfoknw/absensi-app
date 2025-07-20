@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  face_service:
+    build:
+      context: .
+    container_name: face-service
+    ports:
+      - "8001:8001"  # Flask port
+    volumes:
+      - .:/app
+    networks:
+      - face-net
+
+networks:
+  face-net:
+    driver: bridge

@@ -1,0 +1,343 @@
+import 'package:flutter/material.dart';
+import 'package:absensi_mobile/services/lapkin_service.dart';
+import 'package:absensi_mobile/pages/add_lapkin_page.dart';
+import 'package:cool_alert/cool_alert.dart';
+import 'package:absensi_mobile/services/api_service.dart'; // Untuk menampilkan file dari storage
+import 'package:intl/intl.dart'; // Untuk format tanggal dan bulan
+import 'package:url_launcher/url_launcher.dart'; // Untuk membuka URL
+
+// Tambahkan import ini untuk locale data bahasa Indonesia
+import 'package:intl/date_symbol_data_local.dart';
+
+class LapkinPage extends StatefulWidget {
+  const LapkinPage({super.key});
+
+  @override
+  State<LapkinPage> createState() => _LapkinPageState();
+}
+
+class _LapkinPageState extends State<LapkinPage> {
+  List<dynamic> lapkins = [];
+  bool isLoading = true;
+  String errorMessage = '';
+
+  int _selectedMonth = DateTime.now().month;
+  int _selectedYear = DateTime.now().year;
+
+  bool _isDateFormattingInitialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeDateAndFetchLapkins();
+  }
+
+  Future<void> _initializeDateAndFetchLapkins() async {
+    try {
+      if (!_isDateFormattingInitialized) {
+        await initializeDateFormatting('id', null);
+        setState(() {
+          _isDateFormattingInitialized = true;
+        });
+      }
+      await _fetchLapkins();
+    } catch (e) {
+      setState(() {
+        errorMessage = 'Gagal menginisialisasi format tanggal atau memuat data Lapkin: $e';
+        isLoading = false;
+      });
+      if (context.mounted) {
+        CoolAlert.show(
+          context: context,
+          type: CoolAlertType.error,
+          title: 'Error!',
+          text: errorMessage,
+        );
+      }
+    }
+  }
+
+  Future<void> _fetchLapkins() async {
+    setState(() {
+      isLoading = true;
+      errorMessage = '';
+    });
+    try {
+      final data = await LapkinService.getLapkins(
+          month: _selectedMonth, year: _selectedYear);
+      setState(() {
+        lapkins = data;
+        isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        errorMessage = 'Gagal memuat data Lapkin: $e';
+        isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _deleteLapkin(int id) async {
+    CoolAlert.show(
+      context: context,
+      type: CoolAlertType.confirm,
+      title: 'Konfirmasi Hapus',
+      text: 'Anda yakin ingin menghapus Lapkin ini?',
+      onConfirmBtnTap: () async {
+        Navigator.pop(context); // Tutup dialog konfirmasi
+        CoolAlert.show(
+          context: context,
+          type: CoolAlertType.loading,
+          text: 'Menghapus...',
+          barrierDismissible: false,
+        );
+        try {
+          await LapkinService.deleteLapkin(id);
+          if (context.mounted) {
+            Navigator.pop(context); // Tutup dialog loading
+            CoolAlert.show(
+              context: context,
+              type: CoolAlertType.success,
+              title: 'Berhasil!',
+              text: 'Laporan Kinerja berhasil dihapus.',
+            );
+          }
+          _fetchLapkins(); // Refresh list
+        } catch (e) {
+          if (context.mounted) {
+            Navigator.pop(context); // Tutup dialog loading
+            CoolAlert.show(
+              context: context,
+              type: CoolAlertType.error,
+              title: 'Gagal Hapus!',
+              text: e.toString(),
+            );
+          }
+        }
+      },
+      onCancelBtnTap: () {
+        Navigator.pop(context); // Tutup dialog konfirmasi
+      },
+    );
+  }
+
+  String _getMonthName(int month) {
+    if (!_isDateFormattingInitialized) {
+      print('Warning: Date formatting not initialized when _getMonthName called.');
+      return '';
+    }
+    return DateFormat.MMMM('id_ID').format(DateTime(2000, month));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Laporan Kinerja'),
+        backgroundColor: Theme.of(context).primaryColor,
+        foregroundColor: Colors.white,
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  flex: 5, // <--- PERUBAHAN: Memberikan flex ratio
+                  child: DropdownButtonFormField<int>(
+                    value: _selectedMonth,
+                    decoration: const InputDecoration(
+                      labelText: 'Bulan',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: List.generate(12, (index) {
+                      final month = index + 1;
+                      return DropdownMenuItem(
+                        value: month,
+                        child: Text(_getMonthName(month)),
+                      );
+                    }),
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedMonth = value!;
+                      });
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 5, // <--- PERUBAHAN: Memberikan flex ratio
+                  child: DropdownButtonFormField<int>(
+                    value: _selectedYear,
+                    decoration: const InputDecoration(
+                      labelText: 'Tahun',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: List.generate(5, (index) {
+                      final year = DateTime.now().year - index;
+                      return DropdownMenuItem(
+                        value: year,
+                        child: Text(year.toString()),
+                      );
+                    }),
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedYear = value!;
+                      });
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  height: 56,
+                  // Menggunakan ConstrainedBox untuk membatasi lebar tombol secara eksplisit
+                  // jika padding internal ElevatedButton tidak cukup.
+                  // Namun, coba dulu dengan padding yang lebih kecil.
+                  child: ElevatedButton(
+                    onPressed: _fetchLapkins,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).primaryColor,
+                      foregroundColor: Colors.white,
+                      // PERUBAHAN: Mengurangi padding horizontal pada tombol
+                      padding: const EdgeInsets.symmetric(horizontal: 12), // <--- PERUBAHAN
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4.0)),
+                      minimumSize: Size.zero, // <--- Coba tambahkan ini untuk menghilangkan minimum size default
+                    ),
+                    child: const Icon(Icons.search),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : errorMessage.isNotEmpty
+                    ? Center(child: Text(errorMessage))
+                    : lapkins.isEmpty
+                        ? const Center(child: Text('Belum ada data Lapkin untuk periode ini.'))
+                        : ListView.builder(
+                            padding: const EdgeInsets.all(8.0),
+                            itemCount: lapkins.length,
+                            itemBuilder: (context, index) {
+                              final lapkin = lapkins[index];
+                              return Card(
+                                margin: const EdgeInsets.symmetric(vertical: 8.0),
+                                elevation: 2,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16.0),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  '${lapkin['hari']}, ${lapkin['tanggal']}',
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 16,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  lapkin['nama_kegiatan'],
+                                                  style: const TextStyle(fontSize: 14),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Column(
+                                            crossAxisAlignment: CrossAxisAlignment.end,
+                                            children: [
+                                              const Text(
+                                                'Kualitas Hasil',
+                                                style: TextStyle(fontSize: 10, color: Colors.grey),
+                                              ),
+                                              Text(
+                                                '${lapkin['kualitas_hasil'] ?? 0} Pts',
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 18,
+                                                  color: Colors.green,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text('Tempat: ${lapkin['tempat']}'),
+                                      if (lapkin['target'] != null && lapkin['target'].isNotEmpty)
+                                        Text('Target: ${lapkin['target']}'),
+                                      if (lapkin['output'] != null && lapkin['output'].isNotEmpty)
+                                        Text('Output: ${lapkin['output']}'),
+                                      if (lapkin['lampiran'] != null)
+                                        Padding(
+                                          padding: const EdgeInsets.only(top: 8.0),
+                                          child: ElevatedButton.icon(
+                                            onPressed: () async {
+                                              final fileUrl = ApiService.storageUrl(lapkin['lampiran']);
+                                              if (await canLaunchUrl(Uri.parse(fileUrl))) {
+                                                await launchUrl(Uri.parse(fileUrl), mode: LaunchMode.externalApplication);
+                                              } else {
+                                                if (context.mounted) {
+                                                  CoolAlert.show(
+                                                    context: context,
+                                                    type: CoolAlertType.error,
+                                                    title: 'Error!',
+                                                    text: 'Tidak dapat membuka lampiran.',
+                                                  );
+                                                }
+                                              }
+                                            },
+                                            icon: const Icon(Icons.attach_file),
+                                            label: const Text('Lihat Lampiran'),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.blueGrey,
+                                              foregroundColor: Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      Align(
+                                        alignment: Alignment.bottomRight,
+                                        child: IconButton(
+                                          icon: const Icon(Icons.delete, color: Colors.red),
+                                          onPressed: () => _deleteLapkin(lapkin['id']),
+                                          tooltip: 'Hapus Lapkin',
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () async {
+          final result = await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const AddLapkinPage()),
+          );
+          if (result == true) {
+            _fetchLapkins(); // Refresh list jika Lapkin baru ditambahkan
+          }
+        },
+        backgroundColor: Theme.of(context).primaryColor,
+        foregroundColor: Colors.white,
+        child: const Icon(Icons.add),
+        tooltip: 'Tambah Laporan Kinerja',
+      ),
+    );
+  }
+}
