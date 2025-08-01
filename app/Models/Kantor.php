@@ -5,6 +5,8 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str; // ✅ Tambahkan ini
+use Carbon\Carbon; // ✅ Pastikan juga ini ditambahkan
 
 class Kantor extends Model
 {

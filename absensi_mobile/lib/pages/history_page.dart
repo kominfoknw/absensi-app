@@ -18,16 +18,17 @@ class _HistoryPageState extends State<HistoryPage> {
   bool _isLoading = false;
   String? _errorMessage;
   final storage = const FlutterSecureStorage();
-
   DateTime _selectedDate = DateTime.now();
 
   @override
   void initState() {
     super.initState();
+    Intl.defaultLocale = 'id_ID';
     _fetchAttendanceHistory();
   }
 
   Future<void> _fetchAttendanceHistory() async {
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -36,6 +37,7 @@ class _HistoryPageState extends State<HistoryPage> {
     try {
       final token = await storage.read(key: 'token');
       if (token == null) {
+        if (!mounted) return;
         setState(() {
           _errorMessage = "Token otentikasi tidak ditemukan. Harap login ulang.";
           _isLoading = false;
@@ -59,9 +61,11 @@ class _HistoryPageState extends State<HistoryPage> {
         },
       );
 
+      if (!mounted) return;
       if (response.statusCode == 200) {
         setState(() {
           _attendanceHistory = jsonDecode(response.body);
+          // debugPrint("Attendance History: $_attendanceHistory"); // Aktifkan untuk debugging data API
         });
       } else if (response.statusCode == 401) {
         setState(() {
@@ -71,14 +75,17 @@ class _HistoryPageState extends State<HistoryPage> {
         setState(() {
           _errorMessage =
               "Gagal memuat data absensi: ${response.statusCode} ${response.reasonPhrase}";
-          print("API Error: ${response.body}");
+          debugPrint("API Error: ${response.body}");
         });
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = "Terjadi kesalahan jaringan: $e";
+        debugPrint("Network Error: $e");
       });
     } finally {
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
@@ -91,15 +98,16 @@ class _HistoryPageState extends State<HistoryPage> {
       initialDate: _selectedDate,
       firstDate: DateTime(2000),
       lastDate: DateTime.now(),
-      initialEntryMode: DatePickerEntryMode.calendarOnly,
       builder: (BuildContext context, Widget? child) {
         return Theme(
           data: ThemeData.light().copyWith(
-            primaryColor: Theme.of(context).primaryColor,
-            colorScheme:
-                ColorScheme.light(primary: Theme.of(context).primaryColor),
-            buttonTheme:
-                const ButtonThemeData(textTheme: ButtonTextTheme.primary),
+            colorScheme: ColorScheme.light(
+              primary: Theme.of(context).primaryColor,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: Colors.black,
+            ),
+            dialogBackgroundColor: Colors.white,
           ),
           child: child!,
         );
@@ -111,6 +119,72 @@ class _HistoryPageState extends State<HistoryPage> {
         _selectedDate = picked;
       });
       _fetchAttendanceHistory();
+    }
+  }
+
+  // --- REVISI UTAMA PADA FUNGSI INI ---
+  String formatTelat(String? telatRaw) {
+    if (telatRaw == null || telatRaw.trim().isEmpty) { // Jangan cek '00:00:00' di sini, biarkan isWaktuLebihDariNol yang menentukan
+      return '-';
+    }
+    try {
+      final parts = telatRaw.split(':');
+      if (parts.length < 2) return '-'; // Pastikan format valid
+
+      final int jam = int.tryParse(parts[0]) ?? 0;
+      final int menit = int.tryParse(parts[1]) ?? 0;
+      // Detik tidak perlu untuk format HH:mm, tapi pastikan ada jika kita cek durasi > 0
+      final int detik = parts.length > 2 ? (int.tryParse(parts[2]) ?? 0) : 0;
+
+      // Jika durasinya benar-benar nol, baru kembalikan '-'
+      if (jam == 0 && menit == 0 && detik == 0) {
+        return '-';
+      }
+
+      return '${jam.toString().padLeft(2, '0')}:${menit.toString().padLeft(2, '0')}';
+    } catch (e) {
+      debugPrint('Error parsing telat duration: $telatRaw - $e'); // Gunakan debugPrint
+      return '-'; // Fallback jika parsing gagal
+    }
+  }
+
+  // --- REVISI UTAMA PADA FUNGSI INI ---
+  bool isWaktuLebihDariNol(String? raw) {
+    if (raw == null || raw.trim().isEmpty) {
+      return false;
+    }
+    try {
+      final parts = raw.split(':');
+      // Pastikan ada setidaknya 3 bagian (HH, mm, ss) untuk validasi waktu penuh
+      if (parts.length != 3) {
+        debugPrint('Invalid time format for isWaktuLebihDariNol: $raw');
+        return false;
+      }
+
+      final int jam = int.tryParse(parts[0]) ?? 0;
+      final int menit = int.tryParse(parts[1]) ?? 0;
+      final int detik = int.tryParse(parts[2]) ?? 0;
+
+      // Cek apakah ada komponen waktu yang lebih besar dari nol
+      return (jam > 0 || menit > 0 || detik > 0);
+    } catch (e) {
+      debugPrint('Error evaluating time duration: $raw - $e'); // Gunakan debugPrint
+      return false; // Jika ada error parsing, anggap sebagai nol
+    }
+  }
+
+  // Ini adalah fungsi formatTanggalIndo yang Anda miliki (seperti di kode terakhir yang Anda kirimkan)
+  // Saya mengasumsikan ini adalah fungsi lokal di _HistoryPageState, BUKAN dari DateHelper
+  // Jika Anda memang ingin menggunakan DateHelper, maka ubah ini menjadi `return DateHelper.formatTanggalIndo(tanggal);`
+  String formatTanggalIndo(String tanggal) {
+    // Implementasi lokal jika Anda punya
+    try {
+      final DateTime date = DateTime.parse(tanggal);
+      final DateFormat formatter = DateFormat('d MMMM yyyy', 'id_ID');
+      return formatter.format(date);
+    } catch (e) {
+      print('Error parsing date locally in HistoryPage: $tanggal - $e');
+      return tanggal; // Kembalikan string asli sebagai fallback
     }
   }
 
@@ -134,8 +208,7 @@ class _HistoryPageState extends State<HistoryPage> {
             child: Card(
               color: Theme.of(context).primaryColor.withOpacity(0.1),
               elevation: 0,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               child: Padding(
                 padding: const EdgeInsets.all(12.0),
                 child: Row(
@@ -155,19 +228,14 @@ class _HistoryPageState extends State<HistoryPage> {
             ),
           ),
           _isLoading
-              ? const Expanded(
-                  child: Center(child: CircularProgressIndicator()))
+              ? const Expanded(child: Center(child: CircularProgressIndicator()))
               : _errorMessage != null
                   ? Expanded(
                       child: Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Text(
-                            _errorMessage!,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                                color: Colors.red, fontSize: 16),
-                          ),
+                        child: Text(
+                          _errorMessage!,
+                          style: const TextStyle(color: Colors.red, fontSize: 16),
+                          textAlign: TextAlign.center,
                         ),
                       ),
                     )
@@ -176,8 +244,7 @@ class _HistoryPageState extends State<HistoryPage> {
                           child: Center(
                             child: Text(
                               'Tidak ada data absensi untuk bulan ini.',
-                              style:
-                                  TextStyle(fontSize: 16, color: Colors.grey),
+                              style: TextStyle(fontSize: 16, color: Colors.grey),
                             ),
                           ),
                         )
@@ -185,166 +252,113 @@ class _HistoryPageState extends State<HistoryPage> {
                           child: ListView.builder(
                             itemCount: _attendanceHistory.length,
                             itemBuilder: (context, index) {
-                              final attendance =
-                                  _attendanceHistory[index];
+                              final attendance = _attendanceHistory[index];
 
-                              final String tanggal =
-                                  attendance['tanggal'] ?? 'N/A';
-                              final String jamMasuk =
-                                  attendance['jam_masuk'] ?? '-';
-                              final String jamPulang =
-                                  attendance['jam_pulang'] ?? '-';
+                              final String tanggal = attendance['tanggal'] ?? 'N/A';
+                              final String jamMasuk = attendance['jam_masuk'] ?? '-';
+                              final String jamPulang = attendance['jam_pulang'] ?? '-';
+                              final String status = attendance['status'] ?? '-';
 
-                              /// --- LOGIC TELAT ---
-                              String? telatRaw =
-                                  attendance['telat']?.toString();
-                              telatRaw = telatRaw?.trim();
+                              // Pastikan data diambil sebagai String?, ini penting
+                              final String? telatRaw = attendance['telat']?.toString();
+                              final String? pulangCepatRaw = attendance['pulang_cepat']?.toString();
 
-                              bool isTelat = false;
-                              String telatDisplay = '-';
+                              // --- Logika untuk Terlambat ---
+                              final bool isTelat = isWaktuLebihDariNol(telatRaw);
+                              final String telatDisplay = formatTelat(telatRaw); // Gunakan formatTelat
+                              final Color telatColor = isTelat ? Colors.red.shade700 : Colors.green.shade700;
 
-                              if (telatRaw != null &&
-                                  telatRaw != '' &&
-                                  telatRaw != '00:00:00') {
-                                isTelat = true;
-                                telatDisplay = telatRaw;
-                              }
-
-                              /// --- LOGIC PULANG CEPAT ---
-                              String? pulangCepatRaw =
-                                  attendance['pulang_cepat']?.toString();
-                              pulangCepatRaw = pulangCepatRaw?.trim();
-
-                              bool isPulangCepat = false;
-                              if (pulangCepatRaw != null &&
-                                  pulangCepatRaw != '' &&
-                                  pulangCepatRaw != '00:00:00') {
-                                isPulangCepat = true;
-                              }
-
-                              final String status =
-                                  attendance['status'] ?? 'N/A';
+                              // --- Logika untuk Pulang Cepat ---
+                              final bool isPulangCepat = isWaktuLebihDariNol(pulangCepatRaw);
+                              final String pulangCepatDisplay = isPulangCepat ? 'Ya' : 'Tidak';
+                              final Color pulangCepatColor = isPulangCepat ? Colors.orange.shade700 : Colors.green.shade700;
 
                               return Card(
-                                margin: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 8),
+                                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                 elevation: 2,
-                                shape: RoundedRectangleBorder(
-                                    borderRadius:
-                                        BorderRadius.circular(10)),
                                 child: Padding(
-                                  padding: const EdgeInsets.all(16.0),
+                                  padding: const EdgeInsets.all(16),
                                   child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        'Tanggal: ${formatTanggalIndo(tanggal)}',
-                                        style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 16),
+                                        'Tanggal: ${formatTanggalIndo(tanggal)}', // Menggunakan fungsi lokal Anda
+                                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                                       ),
                                       const Divider(height: 16),
                                       Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment
-                                                .spaceBetween,
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                         children: [
-                                          Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              const Text('Jam Masuk:',
-                                                  style: TextStyle(
-                                                      color:
-                                                          Colors.grey)),
-                                              Text(
-                                                jamMasuk.length >= 5
-                                                    ? jamMasuk.substring(
-                                                        0, 5)
-                                                    : jamMasuk,
-                                                style: const TextStyle(
-                                                    fontSize: 15),
-                                              ),
-                                            ],
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                const Text('Jam Masuk:', style: TextStyle(color: Colors.grey)),
+                                                Text(
+                                                  jamMasuk.length >= 5 ? jamMasuk.substring(0, 5) : jamMasuk,
+                                                  style: const TextStyle(fontWeight: FontWeight.w500),
+                                                ),
+                                              ],
+                                            ),
                                           ),
-                                          Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.end,
-                                            children: [
-                                              const Text('Jam Pulang:',
-                                                  style: TextStyle(
-                                                      color:
-                                                          Colors.grey)),
-                                              Text(
-                                                jamPulang != '-' &&
-                                                        jamPulang
-                                                                .length >=
-                                                            5
-                                                    ? jamPulang
-                                                        .substring(0, 5)
-                                                    : jamPulang,
-                                                style: const TextStyle(
-                                                    fontSize: 15),
-                                              ),
-                                            ],
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.end,
+                                              children: [
+                                                const Text('Jam Pulang:', style: TextStyle(color: Colors.grey)),
+                                                Text(
+                                                  jamPulang.length >= 5 ? jamPulang.substring(0, 5) : jamPulang,
+                                                  style: const TextStyle(fontWeight: FontWeight.w500),
+                                                ),
+                                              ],
+                                            ),
                                           ),
                                         ],
                                       ),
                                       const SizedBox(height: 8),
                                       Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment
-                                                .spaceBetween,
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                         children: [
-                                          Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              const Text('Telat:',
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                const Text('Telat:', style: TextStyle(color: Colors.grey)),
+                                                Text(
+                                                  telatDisplay,
                                                   style: TextStyle(
-                                                      color:
-                                                          Colors.grey)),
-                                              Text(
-                                                isTelat
-                                                    ? telatDisplay
-                                                    : '-',
-                                                style: TextStyle(
-                                                    color: isTelat
-                                                        ? Colors.red
-                                                        : Colors.black,
-                                                    fontSize: 15),
-                                              ),
-                                            ],
+                                                    color: telatColor,
+                                                    fontWeight: isTelat ? FontWeight.bold : FontWeight.normal,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
                                           ),
-                                          Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.end,
-                                            children: [
-                                              const Text(
-                                                  'Pulang Cepat:',
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.end,
+                                              children: [
+                                                const Text('Pulang Cepat:', style: TextStyle(color: Colors.grey)),
+                                                Text(
+                                                  pulangCepatDisplay,
                                                   style: TextStyle(
-                                                      color:
-                                                          Colors.grey)),
-                                              Text(
-                                                isPulangCepat
-                                                    ? 'Ya'
-                                                    : 'Tidak',
-                                                style: TextStyle(
-                                                    color: isPulangCepat
-                                                        ? Colors.orange
-                                                        : Colors.black,
-                                                    fontSize: 15),
-                                              ),
-                                            ],
+                                                    color: pulangCepatColor,
+                                                    fontWeight: isPulangCepat ? FontWeight.bold : FontWeight.normal,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
                                           ),
                                         ],
                                       ),
                                       const SizedBox(height: 8),
                                       Text(
-                                        'Status: $status',
-                                        style: const TextStyle(
-                                            fontStyle: FontStyle.italic),
+                                        'Status: ${status.toUpperCase()}',
+                                        style: TextStyle(
+                                          fontStyle: FontStyle.italic,
+                                          color: Colors.blueGrey.shade700,
+                                        ),
                                       ),
                                     ],
                                   ),

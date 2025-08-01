@@ -1,13 +1,8 @@
 <x-filament-panels::page>
-    {{-- DEBUGGING: Pastikan ini muncul jika halaman ini yang dimuat --}}
-    {{-- <h1 style="color: red; font-size: 2em;">DEBUG: Ini Halaman Rekap Perhitungan Kustom Saya!</h1> --}}
-
-    {{-- Render form filter di sini --}}
     <div class="fi-form">
         {{ $this->getForm() }}
     </div>
 
-    {{-- Tampilkan tabel hanya jika filter sudah diterapkan --}}
     @if(!$this->filtersApplied)
         <div class="fi-ta-content-wrapper rounded-xl border border-gray-200 bg-white shadow-sm ring-1 ring-gray-950/5 dark:border-white/10 dark:bg-gray-900 dark:ring-white/10 p-6 text-center text-gray-600 dark:text-gray-400">
             <p>Silakan pilih bulan dan tahun, lalu klik "Tampilkan" untuk melihat rekap perhitungan.</p>
@@ -51,10 +46,29 @@
                                     ->whereMonth('tanggal', $bulanIni)
                                     ->whereYear('tanggal', $tahunIni)
                                     ->sum('kualitas_hasil');
+                                    
+                                $bobotKinerja = $totalKualitasHasil/$jumlahHariKerjaBulanIni;
+
+                                $persentaseKinerja = 0;
+                                if ($bobotKinerja >= 110) {
+                                    $persentaseKinerja = 1.00;
+                                } elseif ($bobotKinerja >= 90) {
+                                    $persentaseKinerja = 1.00;
+                                } elseif ($bobotKinerja >= 70) {
+                                    $persentaseKinerja = 0.75;
+                                } elseif ($bobotKinerja >= 50) {
+                                    $persentaseKinerja = 0.50;
+                                } elseif ($bobotKinerja >= 1) {
+                                    $persentaseKinerja = 0.25;
+                                } else {
+                                    $persentaseKinerja = 0.00;
+                                }
+                                
+                                
 
                                 $hasilKinerja = 0;
                                 if ($jumlahHariKerjaBulanIni > 0) {
-                                    $hasilKinerja = ($totalKualitasHasil / $jumlahHariKerjaBulanIni) * 0.60 * $basicTunjangan;
+                                    $hasilKinerja = $persentaseKinerja * 0.60 * $basicTunjangan;
                                 }
 
                                 $hasilDisiplin = 0.40 * $basicTunjangan;
@@ -107,7 +121,7 @@
                                     {{ $pegawai->nama }}
                                     <div class="text-xs text-gray-500">{{ $pegawai->nip }}</div>
                                 </td>
-                                <td class="fi-ta-cell px-3 py-3.5 sm:first-of-type:ps-6 sm:last-of-type:pe-6">{{ 'Rp ' . $totalKualitasHasil. number_format($hasilKinerja, 0, ',', '.') }}</td>
+                                <td class="fi-ta-cell px-3 py-3.5 sm:first-of-type:ps-6 sm:last-of-type:pe-6">{{ 'Rp ' . number_format($hasilKinerja, 0, ',', '.'), }}</td>
                                 <td class="fi-ta-cell px-3 py-3.5 sm:first-of-type:ps-6 sm:last-of-type:pe-6">{{ 'Rp ' . number_format($hasilDisiplin, 0, ',', '.') }}</td>
                                 <td class="fi-ta-cell px-3 py-3.5 sm:first-of-type:ps-6 sm:last-of-type:pe-6">{{ 'Rp ' . number_format($penguranganRupiah, 0, ',', '.') }}</td>
                                 <td class="fi-ta-cell px-3 py-3.5 sm:first-of-type:ps-6 sm:last-of-type:pe-6">{{ 'Rp ' . number_format($totalTerima, 0, ',', '.') }}</td>

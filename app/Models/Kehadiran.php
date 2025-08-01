@@ -29,8 +29,6 @@ class Kehadiran extends Model
 
     protected $casts = [
         'tanggal' => 'date',
-        'telat' => 'boolean',
-        'pulang_cepat' => 'boolean',
     ];
 
     // --- PASTIkan metode ini ada dan benar ---

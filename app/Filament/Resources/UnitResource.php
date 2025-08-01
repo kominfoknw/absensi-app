@@ -30,11 +30,25 @@ class UnitResource extends Resource
         return $form
             ->schema([
                 Forms\Components\Select::make('kantor_id')
-                    ->label('Kantor')
-                    ->options(fn () => auth()->user()->role === 'superadmin' ? Kantor::pluck('nama_kantor', 'id') : Kantor::where('id', auth()->user()->kantor_id)->pluck('nama_kantor', 'id'))
-                    ->disabled(fn () => auth()->user()->role === 'operator') // Operator tidak bisa mengubah kantor
-                    ->required()
-                    ->exists('kantors', 'id'),
+    ->label('Kantor')
+    ->options(function () {
+        $user = auth()->user();
+
+        // Jika superadmin, tampilkan semua kantor
+        if ($user->role === 'superadmin') {
+            return Kantor::pluck('nama_kantor', 'id');
+        }
+
+        // Jika operator, hanya tampilkan kantor miliknya
+        if ($user->role === 'operator') {
+            return Kantor::where('id', $user->kantor_id)->pluck('nama_kantor', 'id');
+        }
+
+        // Role lain tidak diberikan pilihan
+        return [];
+    })
+    ->required()
+    ->exists('kantors', 'id'),
                 Forms\Components\Select::make('user_id')
                     ->label('Operator Penanggung Jawab')
                     ->options(User::where('role', 'operator')->pluck('name', 'id'))
