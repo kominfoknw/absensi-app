@@ -2,6 +2,7 @@ FROM python:3.10-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Install dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
@@ -18,12 +19,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-RUN cmake --version
-
 WORKDIR /app
 
+# Copy project
 COPY . .
 
+# Install Python packages
 RUN pip install --no-cache-dir -r requirements.txt
 
-CMD ["python", "face_service.py"]
+# Gunicorn lebih stabil daripada flask run
+CMD ["gunicorn", "--bind", "0.0.0.0:8001", "face_service:app", "--workers", "2", "--threads", "4"]

@@ -3,3 +3,4 @@ flask-cors
 opencv-python
 numpy
 face_recognition==1.3.0
+gunicorn

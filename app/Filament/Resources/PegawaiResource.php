@@ -19,6 +19,8 @@ use Filament\Forms\Components\{
 };
 use Filament\Tables\Filters\SelectFilter;
 use App\Filament\Resources\PegawaiResource\Pages;
+use Illuminate\Support\Facades\Hash;
+use Filament\Notifications\Notification;
 
 class PegawaiResource extends Resource
 {
@@ -149,6 +151,36 @@ class PegawaiResource extends Resource
                     ->icon('heroicon-o-camera')
                     ->color('info')
                     ->url(fn (Pegawai $record) => static::getUrl('rekam-wajah', ['record' => $record])),
+            Action::make('resetPassword')
+                ->label('Reset Password')
+                ->icon('heroicon-o-key')
+                ->color('warning')
+                ->visible(fn (Pegawai $record) => User::where('email', $record->nip)->exists())
+                ->action(function (Pegawai $record) {
+                    $user = User::where('email', $record->nip)->first();
+
+                    if ($user) {
+                        $newPassword = $record->nip; // Generate a new random password
+                        $user->password = Hash::make($newPassword);
+                        $user->save();
+
+                        Notification::make()
+                            ->title('Password Berhasil Direset')
+                            ->body("Password untuk NIP: {$user->nip} telah direset.")
+                            ->success()
+                            ->send();
+                    } else {
+                        Notification::make()
+                            ->title('Gagal Mereset Password')
+                            ->body('User tidak ditemukan.')
+                            ->danger()
+                            ->send();
+                    }
+                })
+                ->modalHeading('Konfirmasi Reset Password')
+                ->modalDescription('Apakah Anda yakin ingin mereset password untuk user ini? Tindakan ini tidak dapat dibatalkan.')
+                ->modalSubmitActionLabel('Reset Password')
+                ->modalCancelActionLabel('Batal'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

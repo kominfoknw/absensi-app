@@ -6,11 +6,12 @@ services:
       context: .
     container_name: face-service
     ports:
-      - "8001:8001"  # Flask port
+      - "8001:8001"
     volumes:
       - .:/app
     networks:
       - face-net
+    restart: unless-stopped   # auto restart kalau crash
 
 networks:
   face-net:
