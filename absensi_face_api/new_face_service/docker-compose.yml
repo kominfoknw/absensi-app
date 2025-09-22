@@ -1,0 +1,9 @@
+version: "3.8"
+
+services:
+  face_service:
+    build: .
+    container_name: face_service
+    ports:
+      - "8001:8001"
+    restart: always
