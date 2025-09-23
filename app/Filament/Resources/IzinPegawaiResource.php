@@ -146,13 +146,7 @@ class IzinPegawaiResource extends Resource
                             ->columnSpan('full')
                             ->nullable(),
 
-                        Select::make('status')
-                            ->label('Status Izin')
-                            ->options(IzinStatus::class) // Menggunakan Enum
-                            ->default(IzinStatus::Pending)
-                            ->required()
-                            // Hanya superadmin yang bisa mengubah status jika bukan 'pending'
-                            ->disabled(fn (?Model $record) => $record && $record->status !== IzinStatus::Pending && auth()->user()->role !== 'superadmin'),
+                      
                     ])->columns(2),
             ]);
     }

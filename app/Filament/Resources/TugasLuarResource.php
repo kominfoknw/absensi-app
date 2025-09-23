@@ -97,7 +97,7 @@ class TugasLuarResource extends Resource
                                                   ->orWhereBetween('tanggal_selesai', [$tanggalMulai, $tanggalSelesai])
                                                   ->orWhere(function ($subQ) use ($tanggalMulai, $tanggalSelesai) {
                                                       $subQ->where('tanggal_mulai', '<=', $tanggalMulai)
-                                                           ->where('tanggal_selesai', '>=', $tanggalSalah);
+                                                           ->where('tanggal_selesai', '>=', $tanggalSelesai);
                                                   });
                                             });
 
@@ -141,12 +141,6 @@ class TugasLuarResource extends Resource
                             ->columnSpan('full')
                             ->nullable(),
 
-                        Select::make('status')
-                            ->label('Status Tugas Luar')
-                            ->options(TugasLuarStatus::class)
-                            ->default(TugasLuarStatus::Pending)
-                            ->required()
-                            ->disabled(fn (?Model $record) => $record && $record->status !== TugasLuarStatus::Pending && auth()->user()->role !== 'superadmin'),
                     ])->columns(2),
             ]);
     }

@@ -89,7 +89,7 @@
                     }
                 })
                 .catch(error => {
-                    alert('Gagal menyimpan foto.');
+                    alert('Periksa hasil rekam wajah di data pegawai');
                     console.error(error);
                 });
         });
