@@ -51,6 +51,8 @@ dependencies:
   qr_code_scanner: ^1.0.1  # <-- TAMBAHKAN ATAU PASTIKAN BARIS INI ADA
   permission_handler: ^11.1.0 # <-- TAMBAHKAN ATAU PASTIKAN BARIS INI ADA
   flutter_launcher_icons: "^0.13.1" # Tambahkan baris ini
+  image: ^4.1.3
+
 
    # Jika Anda ingin membuka URL file (misalnya PDF/gambar di browser)
   url_launcher: ^6.2.2 # Opsional, tambahkan jika ingin fitur "Lihat File" membuka browser
@@ -59,6 +61,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.1
+
 
 # ----------- BAGIAN INI HARUS SEJAJAR DENGAN 'name:', 'version:', 'flutter:', dll. -----------
 flutter_launcher_icons:
@@ -84,6 +87,7 @@ flutter:
     - assets/images/logo_konawe.png
     - assets/images/banner_konawe.jpg
     - assets/images/default_avatar.png
+    - assets/models/mobilefacenet.tflite
 
   # To add assets to your application, add an assets section, like this:
   # assets:

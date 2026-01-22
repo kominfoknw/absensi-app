@@ -8,8 +8,8 @@ use App\Http\Controllers\Api\DataController;
 use App\Http\Controllers\Api\BeritaController;
 use App\Http\Controllers\Api\IzinPegawaiController; 
 use App\Http\Controllers\Api\TugasLuarController; 
-use App\Http\Controllers\Api\LapkinController; // <-- TAMBAHKAN INI
-use App\Http\Controllers\Api\EmergencyAbsenceController; // <-- Tambahkan baris ini
+use App\Http\Controllers\Api\LapkinController; 
+use App\Http\Controllers\Api\EmergencyAbsenceController; 
 
 
 Route::post('/login', [AuthController::class, 'login']);

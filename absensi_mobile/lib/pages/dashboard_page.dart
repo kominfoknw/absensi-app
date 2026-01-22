@@ -17,6 +17,9 @@ import 'package:absensi_mobile/pages/profile_page.dart';
 import 'package:absensi_mobile/pages/berita_detail_page.dart';
 import 'package:absensi_mobile/pages/emergency_absence_page.dart';
 import 'package:intl/intl.dart'; // <<< PASTIKAN INI DIIMPOR
+import 'package:shared_preferences/shared_preferences.dart'; // Import ini
+import 'package:absensi_mobile/services/auth_service.dart';
+
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -124,38 +127,44 @@ class _DashboardPageState extends State<DashboardPage> with WidgetsBindingObserv
   }
 
   Future<void> fetchUserData() async {
+  // 1️⃣ Load dari LOCAL dulu (offline-safe)
+  final localPegawai = await AuthService.getPegawaiLocal();
+  if (localPegawai != null) {
+    setState(() {
+      user = localPegawai;
+    });
+  }
+
+  // 2️⃣ Lalu coba update dari API (jika online)
+  try {
     final token = await storage.read(key: 'token');
     final url = ApiService.buildUri('/api/user');
 
-    try {
-      final response = await http.get(
-        url,
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Accept': 'application/json',
-        },
-      );
-      if (response.statusCode == 200) {
-        setState(() {
-          user = jsonDecode(response.body)['pegawai'];
-        });
-      } else if (response.statusCode == 401) {
-        await logout();
-      } else {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Gagal memuat data pengguna: ${response.statusCode}')),
-          );
-        }
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Terjadi kesalahan jaringan: $e')),
-        );
-      }
+    final response = await http.get(
+      url,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/json',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final pegawai = jsonDecode(response.body)['pegawai'];
+
+      // update UI
+      setState(() {
+        user = pegawai;
+      });
+
+      // update local cache
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('pegawai', jsonEncode(pegawai));
     }
+  } catch (_) {
+    // 🔕 DIAMKAN ERROR → OFFLINE MODE
   }
+}
+
 
   Future<void> fetchBerita() async {
     setState(() {

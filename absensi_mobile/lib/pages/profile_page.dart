@@ -4,6 +4,10 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:absensi_mobile/services/api_service.dart';
 import 'package:cool_alert/cool_alert.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'dart:io';
+
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -185,6 +189,57 @@ class _ProfilePageState extends State<ProfilePage> {
       });
     }
   }
+
+ Future<void> _downloadFaceRecognition() async {
+  try {
+    final facePath = _userProfile?['foto_face_recognition'];
+
+    if (facePath == null || facePath.isEmpty) {
+      CoolAlert.show(
+        context: context,
+        type: CoolAlertType.warning,
+        title: "Tidak Ditemukan",
+        text: "Data foto face recognition tidak tersedia.",
+      );
+      return;
+    }
+
+    final url = ApiService.storageUrl(facePath);
+    final response = await http.get(Uri.parse(url));
+
+    if (response.statusCode != 200) {
+      throw Exception("Gagal mengunduh foto");
+    }
+
+    // ✅ TIDAK PERLU IZIN STORAGE
+    final directory = await getApplicationDocumentsDirectory();
+    final filePath =
+        '${directory.path}/face_recognition_${_userProfile?['nip']}.jpg';
+
+    final file = File(filePath);
+    await file.writeAsBytes(response.bodyBytes);
+
+    if (context.mounted) {
+      CoolAlert.show(
+        context: context,
+        type: CoolAlertType.success,
+        title: "Berhasil",
+        text: "Foto face recognition berhasil disimpan.\n$filePath",
+      );
+    }
+  } catch (e) {
+    if (context.mounted) {
+      CoolAlert.show(
+        context: context,
+        type: CoolAlertType.error,
+        title: "Error",
+        text: "Gagal mengunduh foto: $e",
+      );
+    }
+  }
+}
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -372,6 +427,25 @@ class _ProfilePageState extends State<ProfilePage> {
                             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                           ),
                         ),
+                        const SizedBox(height: 16),
+
+ElevatedButton.icon(
+  onPressed: _downloadFaceRecognition,
+  style: ElevatedButton.styleFrom(
+    backgroundColor: Colors.blueGrey,
+    foregroundColor: Colors.white,
+    padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(10),
+    ),
+  ),
+  icon: const Icon(Icons.download),
+  label: const Text(
+    'DOWNLOAD REKAM WAJAH',
+    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+  ),
+),
+
                 ],
               ),
             ),

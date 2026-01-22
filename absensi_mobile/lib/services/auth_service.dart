@@ -7,6 +7,14 @@ import 'package:absensi_mobile/services/api_service.dart';
 class AuthService {
   static final _storage = FlutterSecureStorage();
 
+  static Future<Map<String, dynamic>?> getPegawaiLocal() async {
+  final prefs = await SharedPreferences.getInstance();
+  final jsonString = prefs.getString('pegawai');
+  if (jsonString == null) return null;
+  return jsonDecode(jsonString);
+}
+
+
   static Future<Map<String, dynamic>> login(String email, String password) async {
     try {
       final url = ApiService.buildUri('/api/login');
@@ -23,28 +31,24 @@ class AuthService {
       final data = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
-        await _storage.write(key: 'token', value: data['token']);
+  await _storage.write(key: 'token', value: data['token']);
 
-        // --- BAGIAN BARU: Simpan user_id ke SharedPreferences ---
-        final SharedPreferences prefs = await SharedPreferences.getInstance();
-        // Asumsi data['user'] adalah Map dan memiliki kunci 'id' atau 'user_id'
-        // Anda perlu memastikan kunci yang benar dari respons API Anda.
-        // Contoh: jika responsnya { "user": { "id": 123, "name": "..." } }
-        int? userId = data['user']['id']; // Ganti 'id' jika kunci di API Anda berbeda (misal 'user_id')
-        if (userId != null) {
-          await prefs.setInt('user_id', userId);
-          print('DEBUG: User ID berhasil disimpan ke SharedPreferences: $userId'); // Untuk debugging
-        } else {
-          print('WARNING: User ID tidak ditemukan dalam data user dari API login.');
-        }
-        // --------------------------------------------------------
+  final prefs = await SharedPreferences.getInstance();
 
-        return {
-          'success': true,
-          'message': data['message'],
-          'user': data['user'], // Anda masih bisa mengembalikan data user lengkap
-        };
-      } else {
+  // Simpan ID
+  await prefs.setInt('user_id', data['user']['id']);
+  await prefs.setInt('pegawai_id', data['user']['pegawai_id']);
+
+  // Simpan data pegawai sebagai JSON STRING
+  final pegawaiJson = jsonEncode(data['user']['pegawai']);
+  await prefs.setString('pegawai', pegawaiJson);
+
+  return {
+    'success': true,
+    'user': data['user'],
+  };
+}
+ else {
         return {
           'success': false,
           'message': data['message'] ?? 'Login gagal',

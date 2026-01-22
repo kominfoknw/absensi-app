@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:location/location.dart';
-
 import 'login_page.dart';
 import 'dashboard_page.dart';
 
@@ -20,9 +19,8 @@ class _SplashPageState extends State<SplashPage> {
   void initState() {
     super.initState();
 
-    // Delay 1: Tampilkan splash dulu
+    // Delay sedikit untuk animasi splash
     Future.delayed(const Duration(seconds: 1), () {
-      // Delay 2: Setelah frame pertama selesai, lakukan pengecekan
       WidgetsBinding.instance.addPostFrameCallback((_) {
         checkLoginAndLocation();
       });
@@ -30,8 +28,27 @@ class _SplashPageState extends State<SplashPage> {
   }
 
   Future<void> checkLoginAndLocation() async {
-    final token = await storage.read(key: 'token');
-    bool isFake = await detectFakeGPS();
+    String? token;
+
+    try {
+      print("🔍 Membaca token dari secure storage...");
+      token = await storage.read(key: 'token');
+      print("✅ Token dibaca: $token");
+    } catch (e) {
+      // BUG FIX untuk Android 15 Samsung:
+      // Jika KeyStore rusak, error akan dilempar dari sini.
+      print("⚠️ SecureStorage error: $e");
+      await storage.deleteAll(); // reset penyimpanan rusak
+      token = null;
+    }
+
+    bool isFake = false;
+    try {
+      isFake = await detectFakeGPS();
+    } catch (e) {
+      print("⚠️ Error deteksi lokasi: $e");
+      isFake = false;
+    }
 
     if (!mounted) return;
 
@@ -44,9 +61,7 @@ class _SplashPageState extends State<SplashPage> {
           content: const Text('Matikan Fake GPS sebelum melanjutkan.'),
           actions: [
             TextButton(
-              onPressed: () {
-                Navigator.pop(context); // tutup dialog, tetap di splash
-              },
+              onPressed: () => Navigator.pop(context),
               child: const Text('OK'),
             ),
           ],
@@ -56,7 +71,9 @@ class _SplashPageState extends State<SplashPage> {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (_) => token == null ? const LoginPage() : const DashboardPage(),
+          builder: (_) => token == null
+              ? const LoginPage()
+              : const DashboardPage(),
         ),
       );
     }
@@ -78,9 +95,7 @@ class _SplashPageState extends State<SplashPage> {
     }
 
     LocationData locationData = await location.getLocation();
-
     debugPrint("Mock status: ${locationData.isMock}");
-
     return locationData.isMock ?? false;
   }
 

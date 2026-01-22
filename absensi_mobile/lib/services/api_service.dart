@@ -2,7 +2,7 @@
 
 class ApiService {
   // Ganti base URL sesuai IP/Domain server backend kamu
-  static const String baseUrl = 'http://ekerja.konawekab.go.id';
+  static const String baseUrl = 'https://ekerja.konawekab.go.id';
 
   /// Build full Uri by providing the [path] and optional [queryParams].
   static Uri buildUri(String path, [Map<String, dynamic>? queryParams]) {

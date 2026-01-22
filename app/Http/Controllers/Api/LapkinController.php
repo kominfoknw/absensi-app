@@ -19,32 +19,41 @@ class LapkinController extends Controller
     public function index(Request $request)
     {
         $user = Auth::user();
-        $user->load('pegawai'); // Pastikan relasi pegawai dimuat
+        $user->load('pegawai');
 
         if (!$user->pegawai) {
             return response()->json(['message' => 'Profil pegawai tidak terkait dengan akun Anda.'], 403);
         }
 
         $pegawaiId = $user->pegawai->id;
-
         $query = Lapkin::where('pegawai_id', $pegawaiId);
 
-        // Filter by month and year if provided
-        if ($request->has('month') && $request->has('year')) {
-            $month = $request->input('month');
-            $year = $request->input('year');
-            $query->whereYear('tanggal', $year)
-                  ->whereMonth('tanggal', $month);
-        } else {
-            // Default to current month and year if no filter is provided
-            $query->whereYear('tanggal', Carbon::now()->year)
-                  ->whereMonth('tanggal', Carbon::now()->month);
-        }
+        // Filter bulan dan tahun
+        $month = $request->input('month', Carbon::now()->month);
+        $year = $request->input('year', Carbon::now()->year);
 
-        $lapkins = $query->orderBy('tanggal', 'desc')->get();
+        $lapkins = $query->whereYear('tanggal', $year)
+                        ->whereMonth('tanggal', $month)
+                        ->orderBy('tanggal', 'desc')
+                        ->get();
 
-        return response()->json($lapkins);
+        $formatted = $lapkins->map(function ($lapkin) {
+            return [
+                'id' => $lapkin->id,
+                'hari' => $lapkin->hari,
+                'tanggal' => $lapkin->tanggal->format('Y-m-d'), // aman untuk Flutter
+                'nama_kegiatan' => $lapkin->nama_kegiatan,
+                'tempat' => $lapkin->tempat,
+                'target' => $lapkin->target,
+                'output' => $lapkin->output,
+                'lampiran' => $lapkin->lampiran ? asset('storage/'.$lapkin->lampiran) : null,
+                'kualitas_hasil' => $lapkin->kualitas_hasil,
+            ];
+        });
+
+        return response()->json($formatted);
     }
+
 
     /**
      * Store a newly created resource in storage.
@@ -108,28 +117,33 @@ class LapkinController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(string $id)
-    {
-        $user = Auth::user();
-        $pegawai = Pegawai::where('user_id', $user->id)->first();
+    public function destroy(Request $request, string $id)
+{
+    $user = $request->user();
+    $user->load('pegawai');
 
-        if (!$pegawai) {
-            return response()->json(['message' => 'Pegawai tidak ditemukan untuk user ini.'], 404);
-        }
-
-        $lapkin = Lapkin::where('id', $id)->where('pegawai_id', $pegawai->id)->first();
-
-        if (!$lapkin) {
-            return response()->json(['message' => 'Laporan Kinerja tidak ditemukan atau Anda tidak memiliki akses.'], 404);
-        }
-
-        // Jika ada lampiran, hapus file-nya
-        if ($lapkin->lampiran) {
-            Storage::disk('public')->delete($lapkin->lampiran);
-        }
-
-        $lapkin->delete();
-
-        return response()->json(['message' => 'Laporan Kinerja berhasil dihapus.']);
+    if (!$user->pegawai) {
+        return response()->json(['message' => 'Pegawai tidak ditemukan untuk user ini.'], 404);
     }
+
+    $pegawai = $user->pegawai;
+
+    $lapkin = Lapkin::where('id', $id)
+        ->where('pegawai_id', $pegawai->id)
+        ->first();
+
+    if (!$lapkin) {
+        return response()->json(['message' => 'Laporan Kinerja tidak ditemukan atau Anda tidak memiliki akses.'], 404);
+    }
+
+    // Hapus file lampiran kalau ada
+    if ($lapkin->lampiran) {
+        Storage::disk('public')->delete($lapkin->lampiran);
+    }
+
+    $lapkin->delete();
+
+    return response()->json(['message' => 'Laporan Kinerja berhasil dihapus.']);
+}
+
 }

@@ -1,281 +1,244 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart'; 
 import 'package:camera/camera.dart';
+import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:location/location.dart'; // Pastikan package ini ada di pubspec.yaml
-import 'package:cool_alert/cool_alert.dart';
+import 'package:http/http.dart' as http;
+import 'package:image/image.dart' as img;
+
+import '../services/api_service.dart';
 import '../services/attendance_service.dart';
-import 'package:flutter/services.dart'; // <--- Pastikan ini diimpor untuk SystemNavigator.pop()
 
 class AbsenPage extends StatefulWidget {
-  final bool isMasuk; // true = masuk, false = false
+  final bool isMasuk;
   const AbsenPage({super.key, required this.isMasuk});
 
   @override
   State<AbsenPage> createState() => _AbsenPageState();
 }
 
-class _AbsenPageState extends State<AbsenPage> with WidgetsBindingObserver {
-  late CameraController _cameraController;
-  bool _isCameraInitialized = false;
-  bool _loading = false;
+class _AbsenPageState extends State<AbsenPage> {
+  CameraController? _camera;
+  late FaceDetector _faceDetector;
   final storage = const FlutterSecureStorage();
-  final Location _location = Location(); // Inisialisasi Location service
-  bool _fakeGpsAlertShown = false; // Flag untuk memastikan alert hanya tampil sekali
+
+  bool _isLoading = true;
+  bool _isScanning = true;
+  bool _isVerified = false;
+  String _statusMessage = "Menyiapkan kamera...";
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    initializeCamera();
-    _checkAndHandleFakeGPS(); // Lakukan pengecekan fake GPS saat page dimuat
+    _faceDetector = FaceDetector(
+      options: FaceDetectorOptions(
+        enableClassification: true, 
+        performanceMode: FaceDetectorMode.accurate,
+      ),
+    );
+    _prepare();
+  }
+
+  Future<void> _prepare() async {
+    await _ensureFaceDownloaded();
+    await _initCamera();
+    if (mounted) setState(() => _isLoading = false);
+    _startLivenessDetection();
+  }
+
+  Future<File> _getFaceFile() async {
+    final dir = await getApplicationDocumentsDirectory();
+    return File('${dir.path}/face_reference.jpg');
+  }
+
+  Future<void> _ensureFaceDownloaded() async {
+    final file = await _getFaceFile();
+    if (await file.exists()) return;
+
+    if (mounted) setState(() => _statusMessage = "Mengunduh data wajah...");
+    try {
+      final token = await storage.read(key: 'token');
+      final res = await http.get(
+        Uri.parse(ApiService.buildUri('/api/user').toString()),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final facePath = data['pegawai']['foto_face_recognition'];
+        final imgRes = await http.get(Uri.parse(ApiService.storageUrl(facePath)));
+        await file.writeAsBytes(imgRes.bodyBytes);
+      }
+    } catch (e) {
+      debugPrint("Download Error: $e");
+    }
+  }
+
+  Future<void> _initCamera() async {
+    final cameras = await availableCameras();
+    final front = cameras.firstWhere((c) => c.lensDirection == CameraLensDirection.front);
+    _camera = CameraController(front, ResolutionPreset.medium, enableAudio: false);
+    await _camera!.initialize();
+  }
+
+  void _startLivenessDetection() async {
+    if (_camera == null || !_camera!.value.isInitialized) return;
+
+    _camera!.startImageStream((CameraImage image) async {
+      if (!_isScanning || _isVerified) return;
+
+      final inputImage = _processCameraImage(image);
+      final faces = await _faceDetector.processImage(inputImage);
+
+      if (faces.isEmpty) {
+        if (mounted) setState(() => _statusMessage = "Wajah tidak terlihat");
+        return;
+      }
+
+      for (Face face in faces) {
+        if (face.leftEyeOpenProbability != null && face.rightEyeOpenProbability != null) {
+          if (face.leftEyeOpenProbability! < 0.25 && face.rightEyeOpenProbability! < 0.25) {
+            _isScanning = false;
+            await _camera!.stopImageStream();
+            _processRecognition();
+            break;
+          } else {
+            if (mounted) setState(() => _statusMessage = "Silakan Berkedip...");
+          }
+        }
+      }
+    });
+  }
+
+  Future<void> _processRecognition() async {
+    if (mounted) setState(() => _statusMessage = "Memverifikasi...");
+    try {
+      final XFile photo = await _camera!.takePicture();
+      final File refFile = await _getFaceFile();
+
+      final bool match = await _compareImages(refFile, File(photo.path));
+
+      if (match) {
+        if (mounted) {
+          setState(() {
+            _isVerified = true;
+            _statusMessage = "Verifikasi Berhasil!";
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _isScanning = true;
+            _statusMessage = "Wajah tidak cocok, ulangi!";
+          });
+          _startLivenessDetection();
+        }
+      }
+    } catch (e) {
+      debugPrint("Recognition Error: $e");
+    }
+  }
+
+  Future<bool> _compareImages(File ref, File live) async {
+    final img.Image? i1 = img.decodeImage(await ref.readAsBytes());
+    final img.Image? i2 = img.decodeImage(await live.readAsBytes());
+    if (i1 == null || i2 == null) return false;
+
+    final img.Image s1 = img.copyResize(i1, width: 120);
+    final img.Image s2 = img.copyResize(i2, width: 120);
+
+    double diff = 0;
+    for (int y = 0; y < s1.height; y++) {
+      for (int x = 0; x < s1.width; x++) {
+        final p1 = s1.getPixel(x, y);
+        final p2 = s2.getPixel(x, y);
+        diff += (p1.r - p2.r).abs() + (p1.g - p2.g).abs() + (p1.b - p2.b).abs();
+      }
+    }
+    double score = diff / (s1.width * s1.height * 3);
+    return score < 20; 
+  }
+
+  InputImage _processCameraImage(CameraImage image) {
+    final WriteBuffer allBytes = WriteBuffer();
+    for (final Plane plane in image.planes) {
+      allBytes.putUint8List(plane.bytes);
+    }
+    final bytes = allBytes.done().buffer.asUint8List();
+
+    final Size imageSize = Size(image.width.toDouble(), image.height.toDouble());
+    const imageRotation = InputImageRotation.rotation270deg;
+    const inputImageFormat = InputImageFormat.yuv420;
+
+    final metadata = InputImageMetadata(
+      size: imageSize,
+      rotation: imageRotation,
+      format: inputImageFormat,
+      bytesPerRow: image.planes[0].bytesPerRow,
+    );
+
+    return InputImage.fromBytes(bytes: bytes, metadata: metadata);
+  }
+
+  Future<void> _submit() async {
+    final token = await storage.read(key: 'token');
+    await AttendanceService.submitAttendance(
+      token: token!,
+      isMasuk: widget.isMasuk,
+      tanggal: DateTime.now().toString().substring(0, 10),
+      jam: TimeOfDay.now().format(context),
+      lat: 0, long: 0, fotoBase64: "",
+    );
+    if (mounted) Navigator.pop(context);
   }
 
   @override
   void dispose() {
-    _cameraController.dispose();
-    WidgetsBinding.instance.removeObserver(this);
+    _camera?.dispose();
+    _faceDetector.close();
     super.dispose();
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      _checkAndHandleFakeGPS(); // Lakukan pengecekan lagi saat aplikasi di-resume
-    }
-  }
-
-  Future<void> initializeCamera() async {
-    final cameras = await availableCameras();
-    final frontCamera = cameras.firstWhere(
-        (camera) => camera.lensDirection == CameraLensDirection.front);
-    _cameraController =
-        CameraController(frontCamera, ResolutionPreset.medium, enableAudio: false);
-    await _cameraController.initialize();
-    setState(() {
-      _isCameraInitialized = true;
-    });
-  }
-
-  // Metode Pendeteksian dan Penanganan Fake GPS
-  Future<void> _checkAndHandleFakeGPS() async {
-    // Hanya proses jika alert sudah ditampilkan
-    if (_fakeGpsAlertShown) {
-      return;
-    }
-
-    bool serviceEnabled = await _location.serviceEnabled();
-    if (!serviceEnabled) {
-      serviceEnabled = await _location.requestService();
-      if (!serviceEnabled) {
-        return;
-      }
-    }
-
-    PermissionStatus permissionGranted = await _location.hasPermission();
-    if (permissionGranted == PermissionStatus.denied) {
-      permissionGranted = await _location.requestPermission();
-      if (permissionGranted != PermissionStatus.granted) {
-        return;
-      }
-    }
-
-    LocationData locationData;
-    try {
-      locationData = await _location.getLocation();
-    } catch (e) {
-      if (context.mounted) {
-        CoolAlert.show(
-          context: context,
-          type: CoolAlertType.error,
-          title: "Error Lokasi",
-          text: "Tidak dapat mengambil lokasi: ${e.toString()}",
-        );
-      }
-      return;
-    }
-
-    if (locationData.isMock ?? false) {
-      setState(() {
-        _fakeGpsAlertShown = true;
-      });
-
-      if (context.mounted) {
-        await CoolAlert.show(
-          context: context,
-          type: CoolAlertType.error,
-          title: 'Deteksi Lokasi Palsu!',
-          text: 'Aplikasi mendeteksi penggunaan lokasi palsu. Aplikasi akan ditutup.',
-          barrierDismissible: false,
-          onConfirmBtnTap: () {
-            Navigator.pop(context);
-            SystemNavigator.pop();
-          },
-          // showConfirmBtn: true, // <--- BARIS INI DIHAPUS
-        );
-
-        SystemNavigator.pop();
-      }
-    } else {
-      if (_fakeGpsAlertShown) {
-        setState(() {
-          _fakeGpsAlertShown = false;
-        });
-      }
-    }
-  }
-
-  Future<void> performAttendance() async {
-    try {
-      setState(() => _loading = true);
-
-      // Pengecekan ulang Fake GPS tepat sebelum absen
-      LocationData currentLocData;
-      try {
-        currentLocData = await _location.getLocation();
-      } catch (e) {
-        if (context.mounted) {
-          CoolAlert.show(
-            context: context,
-            type: CoolAlertType.error,
-            title: "Error Lokasi",
-            text: "Tidak dapat mengambil lokasi untuk absen: ${e.toString()}",
-          );
-        }
-        setState(() => _loading = false);
-        return;
-      }
-
-      if (currentLocData.isMock ?? false) {
-          if (context.mounted) {
-            await CoolAlert.show(
-              context: context,
-              type: CoolAlertType.error,
-              title: 'Deteksi Lokasi Palsu!',
-              text: 'Tidak dapat absen karena terdeteksi lokasi palsu. Aplikasi akan ditutup.',
-              barrierDismissible: false,
-              onConfirmBtnTap: () {
-                Navigator.pop(context);
-                SystemNavigator.pop();
-              },
-              // showConfirmBtn: true, // <--- BARIS INI DIHAPUS
-            );
-            SystemNavigator.pop();
-          }
-          setState(() => _loading = false);
-          return;
-      }
-
-      final XFile photo = await _cameraController.takePicture();
-      final bytes = await photo.readAsBytes();
-      final base64Image = base64Encode(bytes);
-
-      final token = await storage.read(key: 'token');
-      final now = DateTime.now();
-
-      final result = await AttendanceService.submitAttendance(
-        token: token!,
-        isMasuk: widget.isMasuk,
-        tanggal: "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}",
-        jam: "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}",
-        lat: currentLocData.latitude!,
-        long: currentLocData.longitude!,
-        fotoBase64: base64Image,
-      );
-
-      if (context.mounted) {
-        CoolAlert.show(
-          context: context,
-          type: CoolAlertType.success,
-          text: result,
-          onConfirmBtnTap: () => Navigator.pop(context),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        CoolAlert.show(
-          context: context,
-          type: CoolAlertType.error,
-          text: e.toString(),
-        );
-      }
-    } finally {
-      setState(() => _loading = false);
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final headerText = widget.isMasuk ? "Absen Masuk" : "Absen Pulang";
+    if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
 
     return Scaffold(
-      appBar: AppBar(title: Text(headerText)),
-      body: _isCameraInitialized
-          ? Stack(
-              children: [
-                Column(
-                  children: [
-                    Expanded(
-                      child: CameraPreview(_cameraController),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: ElevatedButton.icon(
-                        onPressed: _loading || _fakeGpsAlertShown ? null : performAttendance,
-                        icon: const Icon(Icons.fingerprint),
-                        label: Text("Absen Sekarang"),
-                      ),
-                    ),
-                  ],
-                ),
-                if (_loading)
-                  Container(
-                    color: Colors.black45,
-                    child: const Center(
-                      child: CircularProgressIndicator(),
-                    ),
-                  ),
-              ],
-            )
-          : const Center(child: CircularProgressIndicator()),
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          _camera != null && _camera!.value.isInitialized
+              ? Center(child: CameraPreview(_camera!))
+              : Container(),
+          Center(
+            child: Container(
+              width: 260, height: 260,
+              decoration: BoxDecoration(
+                border: Border.all(color: _isVerified ? Colors.green : Colors.white, width: 3),
+                borderRadius: BorderRadius.circular(200),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 70, left: 0, right: 0,
+            child: Text(_statusMessage, textAlign: TextAlign.center, 
+                style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+          ),
+          if (_isVerified)
+            Positioned(
+              bottom: 60, left: 40, right: 40,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.green, padding: const EdgeInsets.symmetric(vertical: 15)),
+                onPressed: _submit,
+                child: const Text("ABSEN SEKARANG", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
-
-// ExitPage is no longer strictly needed if SystemNavigator.pop() is used for direct exit.
-// You can remove it or keep it as a fallback page.
-// class ExitPage extends StatelessWidget {
-//   const ExitPage({super.key});
-
-//   @override
-//   Widget build(BuildContext context) {
-//     return Scaffold(
-//       body: Center(
-//         child: Column(
-//           mainAxisAlignment: MainAxisAlignment.center,
-//           children: [
-//             const Icon(Icons.error_outline, color: Colors.red, size: 80),
-//             const SizedBox(height: 20),
-//             const Text(
-//               "Deteksi Fake GPS",
-//               style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-//             ),
-//             const SizedBox(height: 10),
-//             const Text(
-//               "Aplikasi telah mendeteksi penggunaan lokasi palsu dan tidak dapat dilanjutkan.",
-//               textAlign: TextAlign.center,
-//               style: TextStyle(fontSize: 16),
-//             ),
-//             const SizedBox(height: 30),
-//             ElevatedButton(
-//               onPressed: () {
-//                 // SystemNavigator.pop();
-//               },
-//               child: const Text("Tutup Aplikasi"),
-//             ),
-//           ],
-//         ),
-//       ),
-//     );
-//   }
-// }
